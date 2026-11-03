@@ -1,0 +1,79 @@
+# Z.UST для Android: проверка и сборка APK.
+#
+# - при каждом push/PR: flutter analyze и сборка; APK во вкладке Actions → Artifacts.
+# - при push тега вида v1.0.0: черновик релиза с подписанными APK.
+#
+# Подпись берётся из секретов репозитория (Settings → Secrets → Actions):
+#   ANDROID_KEYSTORE      - файл ключа .jks в base64
+#   ANDROID_STORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+# Без них APK подписан временным ключом и поверх установленной версии не встанет.
+name: android
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Сборка APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Тег совпадает с версией в pubspec.yaml
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          v=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "Тег $GITHUB_REF_NAME, а в pubspec.yaml $v"; exit 1; }
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+          cache: true
+      - name: Ключ подписи
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            # релиз без настоящего ключа не выпускаем
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then echo "Нет секрета ANDROID_KEYSTORE"; exit 1; fi
+            echo "Секретов нет: сборка с временным ключом"
+            exit 0
+          fi
+          echo "$KEYSTORE" | base64 -d > android/release.jks
+          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter build apk --release --split-per-abi
+      - name: Имена файлов
+        run: |
+          mkdir out
+          for a in arm64-v8a armeabi-v7a x86_64; do
+            cp "build/app/outputs/flutter-apk/app-$a-release.apk" "out/Z.UST-android-$a.apk"
+          done
+          cd out && sha256sum *.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Z.UST-android
+          path: out/*
+          if-no-files-found: error
+      - name: Черновик релиза
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: out/*
