@@ -1,6 +1,7 @@
 package com.f1zzen.zust
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -26,6 +27,11 @@ import kotlin.concurrent.thread
  * поэтому закрытие приложения их не останавливает.
  */
 class MainActivity : FlutterActivity() {
+    companion object {
+        /** Открыли из кнопки в шторке: включить TOR (здесь можно спросить согласие на VPN). */
+        const val EXTRA_START = "zust_start"
+    }
+
     private val VPN_REQUEST = 7
     private var pending: Pair<String, List<String>>? = null
     private var eventListener: ((Map<String, Any>) -> Unit)? = null
@@ -59,8 +65,14 @@ class MainActivity : FlutterActivity() {
                     if (mode == "vpn") {
                         val consent = VpnService.prepare(this)
                         if (consent != null) {
+                            try {
+                                startActivityForResult(consent, VPN_REQUEST)
+                            } catch (_: ActivityNotFoundException) {
+                                // на части телевизоров окно согласия на VPN вырезано
+                                result.success("novpn")
+                                return@setMethodCallHandler
+                            }
                             pending = mode to apps
-                            startActivityForResult(consent, VPN_REQUEST)
                             result.success("consent")
                             return@setMethodCallHandler
                         }
@@ -73,6 +85,16 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "status" -> result.success(ZustService.snapshot())
+                // режим для кнопки в шторке: она включает TOR без приложения
+                "saveMode" -> {
+                    getSharedPreferences("zust", MODE_PRIVATE).edit()
+                        .putString("mode", call.argument<String>("mode") ?: "proxy")
+                        .putStringSet("apps", (call.argument<List<String>>("apps") ?: emptyList()).toSet())
+                        .apply()
+                    result.success(null)
+                }
+                "addTile" -> result.success(requestTile())
+                "isTv" -> result.success(packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK))
                 "forgetBridges" -> {
                     Bridges.forget(java.io.File(filesDir, "tor"))
                     result.success(null)
@@ -82,6 +104,10 @@ class MainActivity : FlutterActivity() {
                     val list = installedApps()
                     runOnUiThread { result.success(list) }
                 }
+                "comssStatus" -> result.success(
+                    mapOf("supported" to Comss.supported(), "on" to Comss.enabled(this), "direct" to Comss.canWrite(this))
+                )
+                "comssSet" -> result.success(Comss.set(this, call.argument<Boolean>("on") == true))
                 "batteryOptimized" -> {
                     val pm = getSystemService(PowerManager::class.java)
                     result.success(!pm.isIgnoringBatteryOptimizations(packageName))
@@ -135,6 +161,58 @@ class MainActivity : FlutterActivity() {
             ZustService.start(this, p.first, p.second)
         } else {
             ZustService.listeners.forEach { it(ZustService.snapshot() + mapOf("line" to "VPN не разрешён")) }
+        }
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        startFromTile(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
+    private fun startFromTile(i: Intent?) {
+        if (i?.getBooleanExtra(EXTRA_START, false) != true) return
+        i.removeExtra(EXTRA_START)
+        if (ZustService.state != 0) return
+        val p = getSharedPreferences("zust", MODE_PRIVATE)
+        val mode = p.getString("mode", "proxy") ?: "proxy"
+        val apps = p.getStringSet("apps", emptySet())?.toList() ?: emptyList()
+        if (mode == "vpn") {
+            val consent = VpnService.prepare(this)
+            if (consent != null) {
+                try {
+                    pending = mode to apps
+                    startActivityForResult(consent, VPN_REQUEST)
+                } catch (_: ActivityNotFoundException) {
+                    pending = null
+                }
+                return
+            }
+        }
+        ZustService.start(this, mode, apps)
+    }
+
+    /**
+     * Android 13+: системное окно "Добавить кнопку в шторку?".
+     * "added" - уже есть или добавили, "asked" - окно показано, "manual" - добавить вручную.
+     */
+    private fun requestTile(): String {
+        if (Build.VERSION.SDK_INT < 33) return "manual"
+        return try {
+            val sbm = getSystemService(android.app.StatusBarManager::class.java)
+            sbm.requestAddTileService(
+                android.content.ComponentName(this, ZustTile::class.java),
+                "Z.UST",
+                android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_stat_zust),
+                mainExecutor,
+            ) { }
+            "asked"
+        } catch (_: Exception) {
+            "manual"
         }
     }
 

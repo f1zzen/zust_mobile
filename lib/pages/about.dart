@@ -47,25 +47,37 @@ class _AboutState extends State<_About> {
           controller: scroll,
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
           children: [
-            Text(t.t(title), style: TextStyle(fontFamily: t.headingFont, fontSize: 22, fontWeight: t.headingWeight, color: t.onSurface)),
-            if (hint.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(hint, style: TextStyle(fontSize: 13, color: t.onSurfaceVariant)),
-            ],
+            Text(
+              t.t(title),
+              style: TextStyle(fontFamily: t.headingFont, fontSize: 22, fontWeight: t.headingWeight, color: t.onSurface),
+            ),
+            if (hint.isNotEmpty) ...[const SizedBox(height: 4), Text(hint, style: TextStyle(fontSize: 13, color: t.onSurfaceVariant))],
             const SizedBox(height: 14),
             Segmented(items: const ['Новости', 'Спонсоры', 'Сообщество'], selected: tab, onChanged: (i) => setState(() => tab = i)),
             const SizedBox(height: 16),
             if (tab == 0)
-              Text(info.newsBody.isEmpty ? 'Новостей пока нет. Следите за ТГК!' : info.newsBody,
-                  style: TextStyle(fontSize: 15, height: 1.4, color: t.onSurface))
+              Text(
+                info.newsBody.isEmpty ? 'Новостей пока нет. Следите за ТГК!' : info.newsBody,
+                style: TextStyle(fontSize: 15, height: 1.4, color: t.onSurface),
+              )
             else
               _Grid(tab == 1 ? info.sponsors : info.community),
             const SizedBox(height: 20),
             tab == 1
-                ? ZButton('Поддержать', icon: Icons.favorite_rounded, kind: BtnKind.tonal, expand: true,
-                    onTap: () => zust.openLink('https://boosty.to/zust'))
-                : ZButton('Телеграм-канал', icon: Icons.send_rounded, kind: BtnKind.tonal, expand: true,
-                    onTap: () => zust.openLink('https://t.me/zdotust')),
+                ? ZButton(
+                    'Поддержать',
+                    icon: Icons.favorite_rounded,
+                    kind: BtnKind.tonal,
+                    expand: true,
+                    onTap: () => zust.openLink('https://boosty.to/zust'),
+                  )
+                : ZButton(
+                    'Телеграм-канал',
+                    icon: Icons.send_rounded,
+                    kind: BtnKind.tonal,
+                    expand: true,
+                    onTap: () => zust.openLink('https://t.me/zdotust'),
+                  ),
           ],
         ),
       ),
@@ -95,17 +107,24 @@ class _Grid extends StatelessWidget {
               color: t.classic ? Colors.white.withValues(alpha: .04) : t.surfaceHigh,
               borderRadius: BorderRadius.circular(t.radiusM),
             ),
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Text(p.name,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  p.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: t.onSurface)),
-              if (p.note.isNotEmpty)
-                Text(p.note,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: t.onSurface),
+                ),
+                if (p.note.isNotEmpty)
+                  Text(
+                    p.note,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: t.primary)),
-            ]),
+                    style: TextStyle(fontSize: 12, color: t.primary),
+                  ),
+              ],
+            ),
           ),
       ],
     );

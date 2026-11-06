@@ -19,12 +19,18 @@ class Zust extends ChangeNotifier {
 
   TorState state = TorState.off;
   int progress = 0;
+
+  /// Трафик TOR с момента включения, байты.
+  int rx = 0, tx = 0;
   String lastLog = '';
   final List<String> logs = [];
   StreamSubscription? _sub;
 
   /// Нажали "включить", но сервис ещё не ответил (или ждём согласия на VPN).
   bool pending = false;
+
+  /// На устройстве нет окна согласия на VPN (бывает на телевизорах): работает только прокси.
+  bool noVpn = false;
 
   Future<void> init() async {
     try {
@@ -35,6 +41,8 @@ class Zust extends ChangeNotifier {
       final m = Map<String, dynamic>.from(e as Map);
       state = TorState.values[(m['state'] as int).clamp(0, 2)];
       progress = m['progress'] as int;
+      rx = (m['rx'] as int?) ?? 0;
+      tx = (m['tx'] as int?) ?? 0;
       final line = m['line'] as String?;
       if (line != null) {
         logs.add(line);
@@ -59,6 +67,12 @@ class Zust extends ChangeNotifier {
     pending = true;
     notifyListeners();
     final r = await _method.invokeMethod<String>('start', {'mode': vpn ? 'vpn' : 'proxy', 'apps': apps});
+    if (r == 'novpn') {
+      pending = false;
+      noVpn = true;
+      notifyListeners();
+      return;
+    }
     // ждём окно согласия на VPN дольше; если сервис так и не ответил - снимаем "ожидание"
     Future.delayed(Duration(seconds: r == 'consent' ? 60 : 10), () {
       if (pending && state == TorState.off) {
@@ -75,9 +89,50 @@ class Zust extends ChangeNotifier {
 
   Future<List<AppInfo>> apps() async {
     final list = await _method.invokeListMethod<Map>('apps') ?? [];
-    return list
-        .map((m) => AppInfo(m['name'] as String, m['package'] as String, m['icon'] as Uint8List))
-        .toList();
+    return list.map((m) => AppInfo(m['name'] as String, m['package'] as String, m['icon'] as Uint8List)).toList();
+  }
+
+  Future<bool> isTv() async {
+    try {
+      return await _method.invokeMethod<bool>('isTv') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Режим для кнопки в шторке.
+  Future<void> saveMode(bool vpn, List<String> apps) async {
+    try {
+      await _method.invokeMethod('saveMode', {'mode': vpn ? 'vpn' : 'proxy', 'apps': apps});
+    } catch (_) {}
+  }
+
+  /// "asked" - система спросила сама, "manual" - нужно добавить вручную.
+  Future<String> addTile() async {
+    try {
+      return await _method.invokeMethod<String>('addTile') ?? 'manual';
+    } catch (_) {
+      return 'manual';
+    }
+  }
+
+  /// Comss DNS: {supported, on, direct}.
+  Future<Map<String, bool>> comssStatus() async {
+    try {
+      final m = await _method.invokeMapMethod<String, bool>('comssStatus');
+      return m ?? const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// "on" / "off" - переключил сам Z.UST, "manual" - открыты настройки.
+  Future<String> comssSet(bool on) async {
+    try {
+      return await _method.invokeMethod<String>('comssSet', {'on': on}) ?? 'manual';
+    } catch (_) {
+      return 'manual';
+    }
   }
 
   Future<bool> batteryOptimized() async => await _method.invokeMethod<bool>('batteryOptimized') ?? false;

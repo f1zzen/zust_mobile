@@ -19,6 +19,8 @@ class Prefs extends ChangeNotifier {
   ZTheme theme = const ZTheme();
   bool vpn = false;
   List<String> apps = [];
+  bool traffic = false;
+  bool tv = false;
 
   Future<void> load() async {
     _p = await SharedPreferences.getInstance();
@@ -30,6 +32,15 @@ class Prefs extends ChangeNotifier {
     );
     vpn = _p.getBool('vpn') ?? false;
     apps = _p.getStringList('apps') ?? [];
+    traffic = _p.getBool('traffic') ?? false;
+    // кнопка в шторке берёт режим отсюда, даже если TOR ещё ни разу не включали
+    zust.saveMode(vpn, apps);
+  }
+
+  void setTraffic(bool v) {
+    traffic = v;
+    _p.setBool('traffic', v);
+    notifyListeners();
   }
 
   void setTheme(ZTheme t) {
@@ -48,12 +59,14 @@ class Prefs extends ChangeNotifier {
   void setVpn(bool v) {
     vpn = v;
     _p.setBool('vpn', v);
+    zust.saveMode(vpn, apps);
     notifyListeners();
   }
 
   void setApps(List<String> a) {
     apps = a;
     _p.setStringList('apps', a);
+    zust.saveMode(vpn, apps);
     notifyListeners();
   }
 }
@@ -62,6 +75,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await prefs.load();
   await zust.init();
+  // телевизор: пульт не всегда переключает Flutter в режим клавиатуры, рамку фокуса показываем всегда
+  prefs.tv = await zust.isTv();
+  if (prefs.tv) FocusManager.instance.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
   runApp(const ZustApp());
 }
 
@@ -74,12 +90,14 @@ class ZustApp extends StatelessWidget {
       listenable: prefs,
       builder: (context, _) {
         final t = prefs.theme;
-        SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          systemNavigationBarColor: Colors.transparent,
-          statusBarIconBrightness: t.dark ? Brightness.light : Brightness.dark,
-          systemNavigationBarIconBrightness: t.dark ? Brightness.light : Brightness.dark,
-        ));
+        SystemChrome.setSystemUIOverlayStyle(
+          SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+            statusBarIconBrightness: t.dark ? Brightness.light : Brightness.dark,
+            systemNavigationBarIconBrightness: t.dark ? Brightness.light : Brightness.dark,
+          ),
+        );
         return MaterialApp(
           title: 'Z.UST',
           debugShowCheckedModeBanner: false,
@@ -117,26 +135,35 @@ class _ShellState extends State<Shell> {
     return Scaffold(
       backgroundColor: t.background,
       extendBody: true,
-      body: Stack(children: [
-        if (t.classic) Positioned.fill(child: StarsBackground(animate: t.motion)),
-        SafeArea(
-          bottom: false,
-          child: AnimatedSwitcher(
-            duration: t.normal,
-            switchInCurve: Curves.easeOutCubic,
-            // уходящая страница исчезает сразу - без наложения двух страниц друг на друга
-            layoutBuilder: (current, previous) => current ?? const SizedBox(),
-            transitionBuilder: (child, a) => FadeTransition(
-              opacity: a,
-              child: SlideTransition(
-                position: Tween(begin: const Offset(0, .03), end: Offset.zero).animate(a),
-                child: child,
+      body: Stack(
+        children: [
+          if (t.classic) Positioned.fill(child: StarsBackground(animate: t.motion)),
+          SafeArea(
+            bottom: false,
+            // телевизор и планшет: колонка по центру, а не на всю ширину
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: AnimatedSwitcher(
+                  duration: t.normal,
+                  switchInCurve: Curves.easeOutCubic,
+                  // уходящая страница исчезает сразу - без наложения двух страниц друг на друга
+                  layoutBuilder: (current, previous) => current ?? const SizedBox(),
+                  transitionBuilder: (child, a) => FadeTransition(
+                    opacity: a,
+                    child: SlideTransition(
+                      position: Tween(begin: const Offset(0, .03), end: Offset.zero).animate(a),
+                      child: child,
+                    ),
+                  ),
+                  child: KeyedSubtree(key: ValueKey(page), child: page == 0 ? const HomePage() : const SettingsPage()),
+                ),
               ),
             ),
-            child: KeyedSubtree(key: ValueKey(page), child: page == 0 ? const HomePage() : const SettingsPage()),
           ),
-        ),
-      ]),
+        ],
+      ),
       bottomNavigationBar: _NavBar(page: page, onTap: (i) => setState(() => page = i)),
     );
   }
@@ -162,40 +189,58 @@ class _NavBar extends StatelessWidget {
             ? (t.classic ? Border.all(color: Colors.white.withValues(alpha: .1)) : null)
             : Border(top: BorderSide(color: t.outline)),
       ),
-      child: Row(children: [
-        for (var i = 0; i < items.length; i++)
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => onTap(i),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                AnimatedContainer(
-                  duration: t.normal,
-                  curve: const Cubic(.34, 1.56, .64, 1),
-                  width: i == page ? 60 : 40,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: i == page && !t.mono ? t.primaryContainer : Colors.transparent,
-                    borderRadius: BorderRadius.circular(t.mono ? 0 : 15),
-                    border: i == page && t.mono ? Border(bottom: BorderSide(color: t.onSurface, width: 2)) : null,
+      child: Row(
+        children: [
+          for (var i = 0; i < items.length; i++)
+            Expanded(
+              child: ZFocus(
+                onTap: () => onTap(i),
+                radius: 30,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onTap(i),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AnimatedContainer(
+                        duration: t.normal,
+                        curve: const Cubic(.34, 1.56, .64, 1),
+                        width: i == page ? 60 : 40,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: i == page && !t.mono ? t.primaryContainer : Colors.transparent,
+                          borderRadius: BorderRadius.circular(t.mono ? 0 : 15),
+                          border: i == page && t.mono ? Border(bottom: BorderSide(color: t.onSurface, width: 2)) : null,
+                        ),
+                        child: Icon(
+                          items[i].$1,
+                          size: 22,
+                          color: i == page ? (t.mono ? t.onSurface : t.onPrimaryContainer) : t.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        t.t(items[i].$2),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: i == page ? t.strongWeight : FontWeight.w400,
+                          color: i == page ? t.onSurface : t.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
-                  child: Icon(items[i].$1, size: 22, color: i == page ? (t.mono ? t.onSurface : t.onPrimaryContainer) : t.onSurfaceVariant),
                 ),
-                const SizedBox(height: 3),
-                Text(t.t(items[i].$2),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: i == page ? t.strongWeight : FontWeight.w400,
-                      color: i == page ? t.onSurface : t.onSurfaceVariant,
-                    )),
-              ]),
+              ),
             ),
-          ),
-      ]),
+        ],
+      ),
     );
     if (!floating) {
       // фон панели продолжается под системной полоской жестов
-      return Container(color: t.surface, child: SafeArea(top: false, child: bar));
+      return Container(
+        color: t.surface,
+        child: SafeArea(top: false, child: bar),
+      );
     }
     // под "таблеткой" - плавное затемнение, чтобы список не просвечивал рядом с ней
     final base = t.classic ? const Color(0xFF05010A) : t.background;
@@ -210,7 +255,13 @@ class _NavBar extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Padding(padding: const EdgeInsets.fromLTRB(40, 24, 40, 12), child: bar),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(40, 24, 40, 12),
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 480), child: bar),
+          ),
+        ),
       ),
     );
   }

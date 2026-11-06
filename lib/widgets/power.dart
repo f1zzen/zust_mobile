@@ -3,6 +3,7 @@
 
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'ui.dart';
 import '../theme.dart';
 
 class PowerButton extends StatelessWidget {
@@ -14,20 +15,21 @@ class PowerButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = ZThemeScope.of(context);
-    return switch (t.style) {
+    final button = switch (t.style) {
       ZStyle.m3e => _PowerM3E(state: state, onTap: onTap),
       ZStyle.warm => _PowerWarm(state: state, onTap: onTap),
       ZStyle.mono => _PowerMono(state: state, progress: progress, onTap: onTap),
       ZStyle.classic => _Reactor(state: state, progress: progress, onTap: onTap),
       ZStyle.lite => _PowerCircle(state: state, onTap: onTap),
     };
+    // пульт: на телевизоре кнопка включения выбрана сразу
+    return ZFocus(onTap: state == 1 ? () {} : onTap, radius: t.classic || t.mono ? null : 999, autofocus: true, child: button);
   }
 }
 
 /// Постоянно идущее время - для вращения, "дыхания" и мигания.
 mixin _Ticking<T extends StatefulWidget> on State<T>, SingleTickerProviderStateMixin<T> {
-  late final AnimationController clock =
-      AnimationController(vsync: this, duration: const Duration(hours: 1));
+  late final AnimationController clock = AnimationController(vsync: this, duration: const Duration(hours: 1));
 
   void syncClock(bool run) {
     if (run && !clock.isAnimating) {
@@ -92,7 +94,13 @@ class _PowerM3EState extends State<_PowerM3E> with SingleTickerProviderStateMixi
             builder: (_, _) {
               final s = secs;
               final wobble = busy && t.motion ? .07 + .05 * sin(s * 2 * pi / .7) : 0.0;
-              final spin = !t.motion ? 0.0 : busy ? s * 2 * pi / 2.5 : on ? s * 2 * pi / 30 : 0.0;
+              final spin = !t.motion
+                  ? 0.0
+                  : busy
+                  ? s * 2 * pi / 2.5
+                  : on
+                  ? s * 2 * pi / 30
+                  : 0.0;
               final breath = t.motion ? .5 + .5 * sin(s * 2 * pi / 3.2) : .5;
               final wave = t.motion ? ((s - waveStart) / 1.1).clamp(0.0, 1.0) : 1.0;
               return CustomPaint(
@@ -104,14 +112,17 @@ class _PowerM3EState extends State<_PowerM3E> with SingleTickerProviderStateMixi
                   busy: busy,
                   breath: breath,
                   wave: wave,
-                  scale: down ? .9 : on ? 1 : .92,
+                  scale: down
+                      ? .9
+                      : on
+                      ? 1
+                      : .92,
                 ),
                 child: Center(
                   child: AnimatedScale(
                     scale: down ? .85 : 1,
                     duration: t.fast,
-                    child: Icon(Icons.power_settings_new_rounded,
-                        size: 64, color: on ? t.onPrimary : t.onSurfaceVariant),
+                    child: Icon(Icons.power_settings_new_rounded, size: 64, color: on ? t.onPrimary : t.onSurfaceVariant),
                   ),
                 ),
               );
@@ -160,12 +171,14 @@ class _CookiePainter extends CustomPainter {
         c,
         size.width / 2,
         Paint()
-          ..shader = RadialGradient(colors: [
-            t.primary.withValues(alpha: .30 + .15 * breath),
-            t.primary.withValues(alpha: .08),
-            t.primary.withValues(alpha: 0),
-          ], stops: const [0, .55, 1])
-              .createShader(Rect.fromCircle(center: c, radius: size.width / 2)),
+          ..shader = RadialGradient(
+            colors: [
+              t.primary.withValues(alpha: .30 + .15 * breath),
+              t.primary.withValues(alpha: .08),
+              t.primary.withValues(alpha: 0),
+            ],
+            stops: const [0, .55, 1],
+          ).createShader(Rect.fromCircle(center: c, radius: size.width / 2)),
       );
       // две волны от кнопки в момент включения
       for (final d in [0.0, .16]) {
@@ -187,12 +200,17 @@ class _CookiePainter extends CustomPainter {
     final body = shape(c, core * scale, amp, 9, spin);
     canvas.drawPath(body, Paint()..color = t.surfaceHigh);
     canvas.drawPath(
-        body,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = t.outline);
-    final fill = on ? 1.0 : busy ? .35 : 0.0;
+      body,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = t.outline,
+    );
+    final fill = on
+        ? 1.0
+        : busy
+        ? .35
+        : 0.0;
     if (fill > 0) {
       final rect = Rect.fromCircle(center: c, radius: core);
       canvas.drawPath(
@@ -208,11 +226,13 @@ class _CookiePainter extends CustomPainter {
     if (on) {
       final hc = c - Offset(0, core * .42);
       canvas.drawCircle(
-          hc,
-          core * .6,
-          Paint()
-            ..shader = RadialGradient(colors: [Colors.white.withValues(alpha: .18), Colors.white.withValues(alpha: 0)])
-                .createShader(Rect.fromCircle(center: hc, radius: core * .6)));
+        hc,
+        core * .6,
+        Paint()
+          ..shader = RadialGradient(
+            colors: [Colors.white.withValues(alpha: .18), Colors.white.withValues(alpha: 0)],
+          ).createShader(Rect.fromCircle(center: hc, radius: core * .6)),
+      );
     }
   }
 
@@ -303,7 +323,11 @@ class _PowerMonoState extends State<_PowerMono> with SingleTickerProviderStateMi
               borderRadius: BorderRadius.circular(t.radiusM),
             ),
             child: Text(
-              busy ? 'подключение ${widget.progress}%${caret ? '_' : ' '}' : on ? '[ выключить ]' : '[ включить ]',
+              busy
+                  ? 'подключение ${widget.progress}%${caret ? '_' : ' '}'
+                  : on
+                  ? '[ выключить ]'
+                  : '[ включить ]',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500, color: on ? t.background : t.onSurface),
             ),
           );
@@ -331,7 +355,10 @@ class _PowerCircle extends StatelessWidget {
         height: 180,
         decoration: BoxDecoration(color: on ? t.primary : t.surfaceHigh, shape: BoxShape.circle),
         child: state == 1
-            ? Padding(padding: const EdgeInsets.all(64), child: CircularProgressIndicator(color: t.primary))
+            ? Padding(
+                padding: const EdgeInsets.all(64),
+                child: CircularProgressIndicator(color: t.primary),
+              )
             : Icon(Icons.power_settings_new_rounded, size: 60, color: on ? t.onPrimary : t.onSurfaceVariant),
       ),
     );
@@ -379,29 +406,28 @@ class _ReactorState extends State<_Reactor> with SingleTickerProviderStateMixin,
             animation: clock,
             builder: (_, _) => CustomPaint(
               painter: _ReactorPainter(t, secs, on, busy),
-              child: Stack(children: [
-                Center(
-                  child: busy
-                      ? SizedBox(width: 34, height: 34, child: CircularProgressIndicator(strokeWidth: 2.5, color: t.primary))
-                      : Text(on ? '✦' : '✕',
-                          style: TextStyle(
-                            fontSize: on ? 34 : 26,
-                            color: t.primary,
-                            shadows: on ? [Shadow(color: t.primary, blurRadius: 18)] : null,
-                          )),
-                ),
-                if (busy)
-                  Positioned(
-                    left: 0,
-                    bottom: 0,
-                    child: AnimatedContainer(
-                      duration: t.normal,
-                      height: 2,
-                      width: 320 * widget.progress / 100,
-                      color: t.primary,
-                    ),
+              child: Stack(
+                children: [
+                  Center(
+                    child: busy
+                        ? SizedBox(width: 34, height: 34, child: CircularProgressIndicator(strokeWidth: 2.5, color: t.primary))
+                        : Text(
+                            on ? '✦' : '✕',
+                            style: TextStyle(
+                              fontSize: on ? 34 : 26,
+                              color: t.primary,
+                              shadows: on ? [Shadow(color: t.primary, blurRadius: 18)] : null,
+                            ),
+                          ),
                   ),
-              ]),
+                  if (busy)
+                    Positioned(
+                      left: 0,
+                      bottom: 0,
+                      child: AnimatedContainer(duration: t.normal, height: 2, width: 320 * widget.progress / 100, color: t.primary),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -419,7 +445,11 @@ class _ReactorPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final c = size.center(Offset.zero);
-    final speed = busy ? 3.0 : on ? 1.0 : .25;
+    final speed = busy
+        ? 3.0
+        : on
+        ? 1.0
+        : .25;
     for (final (i, ry) in [(0, .34), (1, .26)]) {
       canvas.save();
       canvas.translate(c.dx, c.dy);

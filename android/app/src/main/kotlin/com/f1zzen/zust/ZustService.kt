@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.TrafficStats
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -45,10 +46,30 @@ class ZustService : VpnService() {
         val listeners = CopyOnWriteArrayList<(Map<String, Any>) -> Unit>()
         private val main = Handler(Looper.getMainLooper())
 
+        /** Трафик приложения (tor и мосты идут от его имени) на момент включения. */
+        @Volatile private var rx0 = 0L
+        @Volatile private var tx0 = 0L
+
+        private fun uidBytes(rx: Boolean): Long {
+            val uid = android.os.Process.myUid()
+            return (if (rx) TrafficStats.getUidRxBytes(uid) else TrafficStats.getUidTxBytes(uid)).coerceAtLeast(0)
+        }
+
         fun snapshot(): Map<String, Any> = mapOf(
             "state" to state, "progress" to progress, "mode" to mode,
             "log" to synchronized(logs) { logs.lastOrNull() ?: "" },
+            "rx" to if (state == 0) 0L else (uidBytes(true) - rx0).coerceAtLeast(0),
+            "tx" to if (state == 0) 0L else (uidBytes(false) - tx0).coerceAtLeast(0),
         )
+
+        /** Пока включено - раз в секунду свежий трафик для интерфейса и кнопки в шторке. */
+        private val tick = object : Runnable {
+            override fun run() {
+                if (state == 0) return
+                publish()
+                main.postDelayed(this, 1000)
+            }
+        }
 
         private fun publish(extra: Map<String, Any> = emptyMap()) {
             val event = snapshot() + extra
@@ -137,7 +158,11 @@ class ZustService : VpnService() {
 
     private fun launch() {
         val gen = ++generation
+        rx0 = uidBytes(true)
+        tx0 = uidBytes(false)
         setState(1, 0)
+        main.removeCallbacks(tick)
+        main.post(tick)
         thread(name = "zust-tor") {
             try {
                 prepareFiles()

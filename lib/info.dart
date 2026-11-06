@@ -50,9 +50,8 @@ class Info extends ChangeNotifier {
     try {
       final j = jsonDecode(results[1] ?? '') as Map<String, dynamic>;
       List<Person> list(String k) => [
-            for (final p in (j[k] as List? ?? const []))
-              Person('${(p as Map)['name'] ?? ''}', '${p['note'] ?? ''}'),
-          ];
+        for (final p in (j[k] as List? ?? const [])) Person('${(p as Map)['name'] ?? ''}', '${p['note'] ?? ''}'),
+      ];
       if (j['sponsors'] != null) sponsors = list('sponsors');
       if (j['community'] != null) community = list('community');
     } catch (_) {}

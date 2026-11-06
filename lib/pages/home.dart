@@ -16,12 +16,14 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool batteryWarn = false;
+  Map<String, bool> comss = const {};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkBattery();
+    _checkComss();
   }
 
   @override
@@ -33,7 +35,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // вернулись из настроек батареи - проверяем ещё раз
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
-    if (s == AppLifecycleState.resumed) _checkBattery();
+    if (s == AppLifecycleState.resumed) {
+      _checkBattery();
+      _checkComss();
+    }
+  }
+
+  Future<void> _checkComss() async {
+    final c = await zust.comssStatus();
+    if (mounted) setState(() => comss = c);
+  }
+
+  Future<void> _comss(BuildContext context) async {
+    final on = comss['on'] == true;
+    final r = await zust.comssSet(!on);
+    if (r != 'manual') return _checkComss();
+    if (!context.mounted) return;
+    final t = ZThemeScope.of(context);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: t.surface,
+        title: Text(on ? 'Выключить Comss DNS' : 'Включить Comss DNS', style: TextStyle(color: t.onSurface)),
+        content: Text(
+          on
+              ? 'В открывшихся настройках найдите "Частный DNS" (обычно в "Сеть и интернет" или "Подключения" → '
+                    '"Другие настройки") и выберите "Автоматически".'
+              : 'Адрес dns.comss.one уже скопирован.\n\n'
+                    'В открывшихся настройках найдите "Частный DNS" (обычно в "Сеть и интернет" или "Подключения" → '
+                    '"Другие настройки"), выберите "Имя хоста поставщика" и вставьте адрес.',
+          style: TextStyle(color: t.onSurface, height: 1.4),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Понятно'))],
+      ),
+    );
   }
 
   Future<void> _checkBattery() async {
@@ -52,9 +87,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _busy(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Сначала отключите TOR'), duration: Duration(seconds: 2)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сначала отключите TOR'), duration: Duration(seconds: 2)));
   }
 
   @override
@@ -70,9 +103,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           _ => 'Выключено',
         };
         final hint = switch (st) {
-          2 => prefs.vpn
-              ? (prefs.apps.isEmpty ? 'Весь трафик идёт через TOR' : 'Через TOR: ${prefs.apps.length} прил.')
-              : 'Прокси SOCKS5 · 127.0.0.1:9050',
+          2 =>
+            prefs.vpn
+                ? (prefs.apps.isEmpty ? 'Весь трафик идёт через TOR' : 'Через TOR: ${prefs.apps.length} прил.')
+                : 'Прокси SOCKS5 · 127.0.0.1:9050',
           1 => zust.lastLog.isEmpty ? 'Запуск…' : zust.lastLog,
           _ => 'Нажмите, чтобы подключиться',
         };
@@ -91,7 +125,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 28),
-            Center(child: PowerButton(state: st, progress: zust.progress, onTap: _toggle)),
+            Center(
+              child: PowerButton(state: st, progress: zust.progress, onTap: _toggle),
+            ),
             const SizedBox(height: 24),
             AnimatedSwitcher(
               duration: t.normal,
@@ -108,16 +144,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 6),
-            GestureDetector(
+            ZFocus(
               onTap: () => showLogs(context),
-              child: Text(
-                hint,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: t.onSurfaceVariant),
+              radius: 8,
+              child: GestureDetector(
+                onTap: () => showLogs(context),
+                child: Text(
+                  hint,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, color: t.onSurfaceVariant),
+                ),
               ),
             ),
+            if (prefs.traffic && st != 0) ...[
+              const SizedBox(height: 10),
+              Text(
+                '↓ ${_size(zust.rx)}   ↑ ${_size(zust.tx)}',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: t.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()]),
+              ),
+            ],
             const SizedBox(height: 20),
             const SectionTitle('Режим'),
             Segmented(
@@ -135,20 +183,39 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 style: TextStyle(fontSize: 12, color: t.onSurfaceVariant),
               ),
             ),
+            if (zust.noVpn && prefs.vpn) ...[
+              const SizedBox(height: 12),
+              ZCard(
+                child: Row(
+                  children: [
+                    Icon(Icons.tv_off_rounded, color: t.primary),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'Это устройство не разрешает приложениям включать VPN. Включите режим Прокси и укажите 127.0.0.1:9050 в нужном приложении.',
+                        style: TextStyle(fontSize: 13, color: t.onSurface),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (st == 1) ...[
               const SizedBox(height: 12),
               ZCard(
-                child: Row(children: [
-                  Icon(Icons.hourglass_top_rounded, color: t.primary),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(
-                      'Подключение может занять 2–3 минуты, особенно в первый раз: Z.UST ищет рабочие мосты. '
-                      'Это нормально - можно свернуть приложение, TOR продолжит подключаться.',
-                      style: TextStyle(fontSize: 13, color: t.onSurface),
+                child: Row(
+                  children: [
+                    Icon(Icons.hourglass_top_rounded, color: t.primary),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'Подключение может занять 2–3 минуты, особенно в первый раз: Z.UST ищет рабочие мосты. '
+                        'Это нормально - можно свернуть приложение, TOR продолжит подключаться.',
+                        style: TextStyle(fontSize: 13, color: t.onSurface),
+                      ),
                     ),
-                  ),
-                ]),
+                  ],
+                ),
               ),
             ],
             if (!prefs.vpn) ...[
@@ -167,6 +234,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 title: 'Приложения',
                 subtitle: prefs.apps.isEmpty ? 'Все приложения' : 'Выбрано: ${prefs.apps.length}',
                 onTap: () => st == 0 ? showAppPicker(context) : _busy(context),
+              ),
+            ],
+            if (comss['supported'] == true) ...[
+              const SizedBox(height: 12),
+              _Tile(
+                icon: comss['on'] == true ? Icons.dns_rounded : Icons.dns_outlined,
+                title: comss['on'] == true ? 'Comss DNS включён' : 'Comss DNS',
+                subtitle: comss['on'] == true
+                    ? 'ChatGPT, Claude, Copilot и другие открываются без TOR. Нажмите, чтобы выключить.'
+                    : 'Открывает ChatGPT, Claude, Copilot и другие сервисы, недоступные из России, и убирает рекламу.',
+                onTap: () => _comss(context),
               ),
             ],
             if (batteryWarn) ...[
@@ -194,22 +272,40 @@ class _Tile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = ZThemeScope.of(context);
-    return GestureDetector(
+    return ZFocus(
       onTap: onTap,
-      child: ZCard(
-        child: Row(children: [
-          Icon(icon, color: t.primary),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(t.t(title), style: TextStyle(fontSize: 15, color: t.onSurface, fontWeight: t.strongWeight)),
-              const SizedBox(height: 2),
-              Text(subtitle, style: TextStyle(fontSize: 12, color: t.onSurfaceVariant)),
-            ]),
+      child: GestureDetector(
+        onTap: onTap,
+        child: ZCard(
+          child: Row(
+            children: [
+              Icon(icon, color: t.primary),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t.t(title),
+                      style: TextStyle(fontSize: 15, color: t.onSurface, fontWeight: t.strongWeight),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: TextStyle(fontSize: 12, color: t.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: t.onSurfaceVariant),
+            ],
           ),
-          Icon(Icons.chevron_right_rounded, color: t.onSurfaceVariant),
-        ]),
+        ),
       ),
     );
   }
+}
+
+String _size(int b) {
+  if (b < 1024) return '$b Б';
+  if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(0)} КБ';
+  if (b < 1024 * 1024 * 1024) return '${(b / 1024 / 1024).toStringAsFixed(1)} МБ';
+  return '${(b / 1024 / 1024 / 1024).toStringAsFixed(2)} ГБ';
 }

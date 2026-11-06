@@ -2,6 +2,7 @@
 
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme.dart';
 
 class ZCard extends StatelessWidget {
@@ -21,6 +22,61 @@ class ZCard extends StatelessWidget {
         border: t.cardBorder || t.mono ? Border.all(color: t.outline) : null,
       ),
       child: child,
+    );
+  }
+}
+
+/// Пульт (Android TV) и клавиатура: стрелки выбирают, OK/Enter нажимает, вокруг выбранного - рамка.
+class ZFocus extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final double? radius;
+  final bool autofocus;
+  const ZFocus({super.key, required this.child, required this.onTap, this.radius, this.autofocus = false});
+
+  @override
+  State<ZFocus> createState() => _ZFocusState();
+}
+
+class _ZFocusState extends State<ZFocus> {
+  bool lit = false;
+
+  static const _keys = <ShortcutActivator, Intent>{
+    SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
+    SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+    SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+    SingleActivator(LogicalKeyboardKey.gameButtonA): ActivateIntent(),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ZThemeScope.of(context);
+    return FocusableActionDetector(
+      enabled: widget.onTap != null,
+      autofocus: widget.autofocus,
+      shortcuts: _keys,
+      onShowFocusHighlight: (v) => setState(() => lit = v),
+      // выбранное пультом - в середину экрана, а не под нижнюю панель
+      onFocusChange: (f) {
+        if (f) Scrollable.ensureVisible(context, alignment: .5, duration: t.normal, curve: Curves.easeOutCubic);
+      },
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap?.call();
+            return null;
+          },
+        ),
+      },
+      child: Container(
+        foregroundDecoration: lit
+            ? BoxDecoration(
+                borderRadius: BorderRadius.circular(widget.radius ?? t.radiusM),
+                border: Border.all(color: t.mono ? t.onSurface : t.primary, width: 3),
+              )
+            : null,
+        child: widget.child,
+      ),
     );
   }
 }
@@ -50,53 +106,57 @@ class _ZButtonState extends State<ZButton> {
     final bg = !enabled && (k == BtnKind.filled || k == BtnKind.tonal)
         ? t.surfaceHigh
         : k == BtnKind.filled
-            ? t.primary
-            : k == BtnKind.tonal
-                ? t.primaryContainer
-                : Colors.transparent;
+        ? t.primary
+        : k == BtnKind.tonal
+        ? t.primaryContainer
+        : Colors.transparent;
     final fg = !enabled
         ? t.onSurfaceVariant
         : k == BtnKind.filled
-            ? t.onPrimary
-            : k == BtnKind.tonal
-                ? t.onPrimaryContainer
-                : (t.mono || t.warm)
-                    ? t.onSurface
-                    : t.primary;
+        ? t.onPrimary
+        : k == BtnKind.tonal
+        ? t.onPrimaryContainer
+        : (t.mono || t.warm)
+        ? t.onSurface
+        : t.primary;
     final h = t.m3e ? 52.0 : 46.0;
     // M3E: при нажатии таблетка "сплющивается" в скруглённый квадрат
     final radius = t.pillButtons ? (down && t.m3e && t.motion ? t.radiusS : h / 2) : t.radiusS;
-    return GestureDetector(
-      onTapDown: enabled ? (_) => setState(() => down = true) : null,
-      onTapUp: enabled ? (_) => setState(() => down = false) : null,
-      onTapCancel: () => setState(() => down = false),
+    return ZFocus(
       onTap: widget.onTap,
-      child: AnimatedScale(
-        scale: down && (t.mono || t.warm) && t.motion ? .97 : 1,
-        duration: t.fast,
-        child: AnimatedContainer(
-          duration: t.normal,
-          curve: const Cubic(.34, 1.56, .64, 1),
-          height: h,
-          padding: const EdgeInsets.symmetric(horizontal: 22),
-          decoration: BoxDecoration(
-            color: down && enabled ? Color.lerp(bg == Colors.transparent ? fg.withValues(alpha: 0) : bg, fg, .12) : bg,
-            borderRadius: BorderRadius.circular(radius),
-            border: k == BtnKind.outline ? Border.all(color: t.outline.withValues(alpha: .4)) : null,
-          ),
-          child: Row(
-            mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (widget.icon != null) ...[Icon(widget.icon, size: 18, color: fg), const SizedBox(width: 8)],
-              Flexible(
-                child: Text(
-                  t.t(widget.text),
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: fg, fontSize: 15, fontWeight: t.mono ? FontWeight.w500 : t.strongWeight),
+      radius: radius,
+      child: GestureDetector(
+        onTapDown: enabled ? (_) => setState(() => down = true) : null,
+        onTapUp: enabled ? (_) => setState(() => down = false) : null,
+        onTapCancel: () => setState(() => down = false),
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: down && (t.mono || t.warm) && t.motion ? .97 : 1,
+          duration: t.fast,
+          child: AnimatedContainer(
+            duration: t.normal,
+            curve: const Cubic(.34, 1.56, .64, 1),
+            height: h,
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+            decoration: BoxDecoration(
+              color: down && enabled ? Color.lerp(bg == Colors.transparent ? fg.withValues(alpha: 0) : bg, fg, .12) : bg,
+              borderRadius: BorderRadius.circular(radius),
+              border: k == BtnKind.outline ? Border.all(color: t.outline.withValues(alpha: .4)) : null,
+            ),
+            child: Row(
+              mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (widget.icon != null) ...[Icon(widget.icon, size: 18, color: fg), const SizedBox(width: 8)],
+                Flexible(
+                  child: Text(
+                    t.t(widget.text),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: fg, fontSize: 15, fontWeight: t.mono ? FontWeight.w500 : t.strongWeight),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -137,15 +197,16 @@ class Separator extends StatelessWidget {
     final line = Expanded(child: Container(height: 1, color: Colors.white.withValues(alpha: .08)));
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
-      child: Row(children: [
-        line,
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(text.toUpperCase(),
-              style: TextStyle(fontSize: 11, letterSpacing: 1.2, color: Colors.white.withValues(alpha: .35))),
-        ),
-        line,
-      ]),
+      child: Row(
+        children: [
+          line,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(text.toUpperCase(), style: TextStyle(fontSize: 11, letterSpacing: 1.2, color: Colors.white.withValues(alpha: .35))),
+          ),
+          line,
+        ],
+      ),
     );
   }
 }
@@ -173,33 +234,40 @@ class Segmented extends StatelessWidget {
           children: [
             for (var i = 0; i < items.length; i++)
               Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
+                child: ZFocus(
                   onTap: () => onChanged(i),
-                  child: AnimatedContainer(
-                    duration: t.normal,
-                    decoration: BoxDecoration(
-                      color: i == selected ? (t.mono ? t.onSurface : t.primaryContainer) : Colors.transparent,
-                      border: i > 0 ? Border(left: BorderSide(color: t.outline)) : null,
-                    ),
-                    alignment: Alignment.center,
-                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      if (i == selected && !t.mono) ...[
-                        Icon(Icons.check_rounded, size: 16, color: t.onPrimaryContainer),
-                        const SizedBox(width: 6),
-                      ],
-                      Flexible(
-                        child: Text(
-                          t.t(items[i]),
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: i == selected ? t.strongWeight : FontWeight.w400,
-                            color: i == selected ? (t.mono ? t.background : t.onPrimaryContainer) : t.onSurface,
-                          ),
-                        ),
+                  radius: 0,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onChanged(i),
+                    child: AnimatedContainer(
+                      duration: t.normal,
+                      decoration: BoxDecoration(
+                        color: i == selected ? (t.mono ? t.onSurface : t.primaryContainer) : Colors.transparent,
+                        border: i > 0 ? Border(left: BorderSide(color: t.outline)) : null,
                       ),
-                    ]),
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (i == selected && !t.mono) ...[
+                            Icon(Icons.check_rounded, size: 16, color: t.onPrimaryContainer),
+                            const SizedBox(width: 6),
+                          ],
+                          Flexible(
+                            child: Text(
+                              t.t(items[i]),
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: i == selected ? t.strongWeight : FontWeight.w400,
+                                color: i == selected ? (t.mono ? t.background : t.onPrimaryContainer) : t.onSurface,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -263,25 +331,39 @@ class SettingRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = ZThemeScope.of(context);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onChanged == null ? null : () => onChanged!(!value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(border: divider ? Border(top: BorderSide(color: t.outline)) : null),
-        child: Row(children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(t.t(title), style: TextStyle(fontSize: 15, color: t.onSurface)),
-              if (hint != null) ...[
-                const SizedBox(height: 3),
-                Text(hint!, style: TextStyle(fontSize: 12, color: t.onSurfaceVariant)),
-              ],
-            ]),
+    final tap = onChanged == null ? null : () => onChanged!(!value);
+    return ZFocus(
+      onTap: tap,
+      radius: 0,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: tap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            border: divider ? Border(top: BorderSide(color: t.outline)) : null,
           ),
-          const SizedBox(width: 12),
-          ZSwitch(value: value, onChanged: onChanged),
-        ]),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t.t(title), style: TextStyle(fontSize: 15, color: t.onSurface)),
+                    if (hint != null) ...[
+                      const SizedBox(height: 3),
+                      Text(hint!, style: TextStyle(fontSize: 12, color: t.onSurfaceVariant)),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              ExcludeFocus(
+                child: ZSwitch(value: value, onChanged: onChanged),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -319,8 +401,8 @@ class _StarsBackgroundState extends State<StarsBackground> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) => RepaintBoundary(
-        child: CustomPaint(painter: _StarsPainter(c), size: Size.infinite),
-      );
+    child: CustomPaint(painter: _StarsPainter(c), size: Size.infinite),
+  );
 }
 
 class _StarsPainter extends CustomPainter {
@@ -370,23 +452,40 @@ class NavRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = ZThemeScope.of(context);
-    return InkWell(
+    return ZFocus(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(border: divider ? Border(top: BorderSide(color: t.outline)) : null),
-        child: Row(children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(t.t(title), style: TextStyle(fontSize: 15, color: t.onSurface)),
-              if (hint != null) ...[
-                const SizedBox(height: 3),
-                Text(hint!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: t.onSurfaceVariant)),
-              ],
-            ]),
+      radius: 0,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            border: divider ? Border(top: BorderSide(color: t.outline)) : null,
           ),
-          Icon(Icons.chevron_right_rounded, color: t.onSurfaceVariant),
-        ]),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t.t(title), style: TextStyle(fontSize: 15, color: t.onSurface)),
+                    if (hint != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        hint!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: t.onSurfaceVariant),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: t.onSurfaceVariant),
+            ],
+          ),
+        ),
       ),
     );
   }
